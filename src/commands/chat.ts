@@ -18,7 +18,7 @@ export async function handleChat(interaction: ChatInputCommandInteraction) {
     await interaction.editReply(fullResponse);
   }
 
-  convo.push({ role: "assistant", content: fullResponse);
+  convo.push({ role: "assistant", content: fullResponse });
   conversationMap.set(threadId, convo);
 }
 

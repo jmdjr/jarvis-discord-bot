@@ -1,9 +1,10 @@
 import { ChatInputCommandInteraction } from "discord.js";
+import { MANAGERS } from "../config";
 
 export function isManager(interaction: ChatInputCommandInteraction): boolean {
   // Only allow users with Manage Channels or Administrator
-  return (
-    interaction.memberPermissions?.has("ManageChannels") ||
-    interaction.memberPermissions?.has("Administrator")
-  );
+  const userId = interaction.user.id;
+  if (MANAGERS.includes(userId)) return true;
+
+  return false;
 }
