@@ -1,30 +1,67 @@
 import fetch, { Response } from "node-fetch";
 import { AI_URL } from "../config";
 
-// Messages follow OpenAI-like format: [{role: 'user'|'assistant', content: string}]
+export interface AIMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+interface AIResponse {
+  message?: {
+    content: string;
+  };
+  // Add other fields as needed if your backend returns more
+}
+
+// Type guard for AIResponse
+function isAIResponse(obj: any): obj is AIResponse {
+  return typeof obj === "object" && obj !== null && typeof obj.message?.content === "string";
+}
+
 export async function* sendChat(
-  messages: { role: string; content: string }[],
+  messages: AIMessage[],
   stream = false
 ): AsyncGenerator<string, void, unknown> {
-  const res: Response = await fetch(`${AI_URL}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, stream })
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${AI_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, stream }),
+    });
+  } catch (err) {
+    yield `Error: Unable to reach AI backend (${err})`;
+    return;
+  }
+
+  if (!response.ok) {
+    yield `Error: AI backend returned ${response.status} ${response.statusText}`;
+    return;
+  }
 
   if (!stream) {
-    const json = await res.json();
-    yield json?.message?.content || "No response";
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch (err) {
+      yield `Error: Failed to parse AI response as JSON (${err})`;
+      return;
+    }
+    if (isAIResponse(json)) {
+      yield json.message?.content ?? "";
+    } else {
+      yield "Error: AI response in unexpected format.";
+    }
     return;
   }
 
   // Streaming: yield as text comes in (chunked response)
-  const reader = res.body?.getReader();
+  if (!response.body) {
+    yield "Error: No stream returned by AI backend.";
+    return;
+  }
   const decoder = new TextDecoder();
-  let done = false;
-  while (!done) {
-    const { value, done: doneReading } = await reader.read();
-    done = doneReading;
-    if (value) yield decoder.decode(value);
+  for await (const chunk of response.body as AsyncIterable<Buffer>) {
+    yield decoder.decode(chunk);
   }
 }

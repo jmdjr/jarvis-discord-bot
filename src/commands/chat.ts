@@ -2,7 +2,8 @@ import { ChatInputCommandInteraction, Message } from "discord.js";
 import { sendChat } from "../ai/client";
 import { AI_NAME } from "../config";
 
-const conversationMap = new Map<string, { role: string; content: string }[]>();
+type AIMessage = { role: "user" | "assistant"; content: string };
+const conversationMap = new Map<string, AIMessage[]>();
 
 export async function handleChat(interaction: ChatInputCommandInteraction) {
   const message = interaction.options.getString("message", true);
