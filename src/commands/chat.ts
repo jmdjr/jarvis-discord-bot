@@ -44,8 +44,20 @@ export async function handleMentionedChat(msg: Message, withoutMention: string) 
   const convoKey = msg.channel.isThread() ? msg.channelId : msg.author.id;
   const convo = conversationMap.get(convoKey) || [];
   convo.push({ role: "user", content: withoutMention });
+  let replyMsg;
 
-  const replyMsg = await msg.reply(`${AI_NAME} is thinking...`);
+  if(msg.channel.isThread()) {
+    replyMsg = await msg.reply(`${AI_NAME} is thinking...`);
+  }
+  else {
+    const thread = await msg.startThread({
+      name: `${AI_NAME} Conversation`,
+      autoArchiveDuration: 60, // 1 hour
+      reason: "Started conversation thread",
+    });
+
+    replyMsg = await thread.send(`${AI_NAME} is thinking...`);
+  }
 
   let fullResponse = "";
   for await (const chunk of sendChat(convo, true)) {
@@ -55,6 +67,8 @@ export async function handleMentionedChat(msg: Message, withoutMention: string) 
 
   convo.push({ role: "assistant", content: fullResponse });
   conversationMap.set(convoKey, convo);
-  await msg.react("🤖"); // React to indicate AI response
+  if(!msg.channel.isThread()) {
+    await msg.react("🤖"); // React to indicate AI response
+  }
 
 }

@@ -62,9 +62,31 @@ export async function* sendChat(
   }
   const decoder = new TextDecoder();
   for await (const chunk of response.body as AsyncIterable<Buffer>) {
-    const json = JSON.parse(decoder.decode(chunk));
-    console.log("Received chunk:", chunk);
-    console.log("Received Json:", json);
+    // console.log("Received chunk:", chunk);
+    let chunkText = decoder.decode(chunk);
+    // console.log("Decoded chunk text:", chunkText);
+    // Check if chunkText contains a newline character, sign of a list of json objects
+    if (chunkText.includes("\n")) {
+      // Split by newlines and yield each JSON object
+      const jsonObjects = chunkText.split("\n").filter(line => line.trim() !== "");
+      const streamedMessages = [];
+      // Parse each JSON object and concat to a string
+      for (const jsonObject of jsonObjects) {
+        try {
+          const parsedObject = JSON.parse(jsonObject);
+          if (isAIResponse(parsedObject)) {
+            streamedMessages.push(parsedObject.message?.content ?? "");
+          }
+        } catch (err) {
+          console.error("Error parsing JSON object:", err);
+        }
+      }
+      yield streamedMessages.join("");
+      continue;
+    }
+
+    // If no newline, treat as a single JSON object
+    const json = JSON.parse(chunkText);
     if (isAIResponse(json)) {
       yield json.message?.content ?? "";
     }
