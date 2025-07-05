@@ -1,9 +1,10 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events, Partials } from "discord.js";
-import { handleChat, handleMentionedChat, handleThreadMessage } from "./commands/chat";
+import { handleChat, handleGetSettings, handleMentionedChat, handleThreadMessage } from "./commands/chat";
 import { handleSettings } from "./commands/settings";
 import dotenv from "dotenv";
 dotenv.config();
 
+const Redact = "<redacted>";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -13,7 +14,11 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
+// Track which threads Jarvis is active in
+let activeThreads = new Set<string>();
+
 client.once("ready", () => {
+
   console.log("Jarvis is online!");
 });
 
@@ -32,27 +37,41 @@ const commands = [
     )
     .addStringOption((opt) =>
       opt.setName("value").setDescription("New value").setRequired(true)
-    )
+    ),
+  new SlashCommandBuilder()
+    .setName("getsettings")
+    .setDescription("Get current bot settings")
 ];
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+  
   if (interaction.commandName === "chat") return handleChat(interaction);
   if (interaction.commandName === "settings") return handleSettings(interaction);
+  if (interaction.commandName === "getsettings") return handleGetSettings(interaction);
 });
 
 // Listen for follow-up messages in threads and treat as conversation continuation
 client.on(Events.MessageCreate, async (msg) => {
+  const isThread = msg.channel.isThread();
+  console.log(`Received message in ${msg.channelId}: ${msg.content}`);
   if (msg.author.bot) return;
 
-  if(msg.mentions.has(client.user!)) {
-    const withoutMention = msg.content.replace(`<@${client.user!.id}>`, "").trim();
+  if (msg.mentions.has(client.user!)) {
+    const withoutMention = msg.content.replace(`<${client.user!.username}>`, "").trim();
+
+    if (isThread && !activeThreads.has(msg.channelId)) {
+      activeThreads = activeThreads.add(msg.channelId);
+    }
 
     await handleMentionedChat(msg, withoutMention);
+    console.log(`listing Active Threads: ${Array.from(activeThreads.values()).join(", ")}`);
     return;
   }
-
-  if (msg.channel.isThread()) {
+  const isInActiveThreads = activeThreads.has(msg.channelId);
+  console.log(`Message in thread is ${isThread && isInActiveThreads ? "<active>" : Redact} - ${msg.channelId}: ${msg.content}`);
+  console.log(`listing Active Threads: ${Array.from(activeThreads.values()).join(", ")}`);
+  if (isThread && isInActiveThreads) {
     await handleThreadMessage(msg);
   }
 });

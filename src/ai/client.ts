@@ -15,7 +15,8 @@ interface AIResponse {
 
 // Type guard for AIResponse
 function isAIResponse(obj: any): obj is AIResponse {
-  return typeof obj === "object" && obj !== null && typeof obj.message?.content === "string";
+  return typeof obj === "object" 
+      && typeof obj.message?.content === "string";
 }
 
 export async function* sendChat(

@@ -1,10 +1,10 @@
 import { ChatInputCommandInteraction } from "discord.js";
-import { updateSetting } from "../config";
+import { MANAGERS, updateSetting } from "../config";
 import { isManager } from "../utils/permissions";
 
 export async function handleSettings(interaction: ChatInputCommandInteraction) {
   if (!isManager(interaction)) {
-    await interaction.reply({ content: "You don't have permission to change settings.", ephemeral: true });
+    await interaction.reply({ content: `You don't have permission to change settings. \nPlease reach out to ${MANAGERS.join(", ")}`, ephemeral: true });
     return;
   }
 
