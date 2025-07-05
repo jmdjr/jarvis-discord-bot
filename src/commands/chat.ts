@@ -39,3 +39,22 @@ export async function handleThreadMessage(msg: Message) {
   convo.push({ role: "assistant", content: fullResponse });
   conversationMap.set(threadId, convo);
 }
+
+export async function handleMentionedChat(msg: Message, withoutMention: string) {
+  const convoKey = msg.channel.isThread() ? msg.channelId : msg.author.id;
+  const convo = conversationMap.get(convoKey) || [];
+  convo.push({ role: "user", content: withoutMention });
+
+  const replyMsg = await msg.reply(`${AI_NAME} is thinking...`);
+
+  let fullResponse = "";
+  for await (const chunk of sendChat(convo, true)) {
+    fullResponse += chunk;
+    await replyMsg.edit(fullResponse);
+  }
+
+  convo.push({ role: "assistant", content: fullResponse });
+  conversationMap.set(convoKey, convo);
+  await msg.react("🤖"); // React to indicate AI response
+
+}

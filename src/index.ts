@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events, Partials } from "discord.js";
-import { handleChat, handleThreadMessage } from "./commands/chat";
+import { handleChat, handleMentionedChat, handleThreadMessage } from "./commands/chat";
 import { handleSettings } from "./commands/settings";
 import dotenv from "dotenv";
 dotenv.config();
@@ -44,6 +44,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // Listen for follow-up messages in threads and treat as conversation continuation
 client.on(Events.MessageCreate, async (msg) => {
   if (msg.author.bot) return;
+
+  if(msg.mentions.has(client.user!)) {
+    const withoutMention = msg.content.replace(`<@${client.user!.id}>`, "").trim();
+
+    await handleMentionedChat(msg, withoutMention);
+    return;
+  }
+
   if (msg.channel.isThread()) {
     await handleThreadMessage(msg);
   }

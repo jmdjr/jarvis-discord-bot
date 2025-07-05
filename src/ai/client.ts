@@ -1,5 +1,5 @@
 import fetch, { Response } from "node-fetch";
-import { AI_URL } from "../config";
+import { AI_MODEL, AI_URL, } from "../config";
 
 export interface AIMessage {
   role: "user" | "assistant";
@@ -24,10 +24,10 @@ export async function* sendChat(
 ): AsyncGenerator<string, void, unknown> {
   let response: Response;
   try {
-    response = await fetch(`${AI_URL}/api/chat`, {
+    response = await fetch(`${AI_URL}api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, stream }),
+      body: JSON.stringify({ messages, stream, model: AI_MODEL }),
     });
   } catch (err) {
     yield `Error: Unable to reach AI backend (${err})`;
@@ -62,6 +62,11 @@ export async function* sendChat(
   }
   const decoder = new TextDecoder();
   for await (const chunk of response.body as AsyncIterable<Buffer>) {
-    yield decoder.decode(chunk);
+    const json = JSON.parse(decoder.decode(chunk));
+    console.log("Received chunk:", chunk);
+    console.log("Received Json:", json);
+    if (isAIResponse(json)) {
+      yield json.message?.content ?? "";
+    }
   }
 }
