@@ -18,8 +18,8 @@ export async function handleChat(interaction: ChatInputCommandInteraction) {
   }
 }
 
-function dropAIName(message: string, client: Client): string {
-  return message.replace(`<@${client.user!.id}>`, "").trim();
+function dropAIName(message: string, client: Client, replaceWith: string = ""): string {
+  return message.replace(`<@${client.user!.id}>`, replaceWith).trim();
 }
 
 async function collectThreadMessages(msg: {channel: Channel, content: string}, client: Client): Promise<AIMessage[]> {
@@ -76,7 +76,7 @@ async function threadReply(isThread: boolean, msg: Message<boolean>) {
   }
 
   const thread = await msg.startThread({
-    name: `${dropAIName(msg.content, msg.client).slice(0, 10)}...`,
+    name: `${dropAIName(msg.content, msg.client, AI_NAME).slice(0, 10)}...`,
     autoArchiveDuration: ThreadAutoArchiveDuration.OneDay, // 1 day
     reason: "Started conversation thread"
   });
