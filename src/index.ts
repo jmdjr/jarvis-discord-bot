@@ -1,10 +1,10 @@
 import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, Events, Partials } from "discord.js";
-import { handleChat, handleGetSettings, handleMentionedChat, handleThreadMessage } from "./commands/chat";
-import { handleSettings } from "./commands/settings";
+import { handleChat, handleClientMessage } from "./commands/chat";
+import { handleGetSettings, handleSettings } from "./commands/settings";
 import dotenv from "dotenv";
+import { log, logContext } from "./utils/log";
 dotenv.config();
 
-const Redact = "<redacted>";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -12,14 +12,6 @@ const client = new Client({
     GatewayIntentBits.MessageContent
   ],
   partials: [Partials.Channel]
-});
-
-// Track which threads Jarvis is active in
-let activeThreads = new Set<string>();
-
-client.once("ready", () => {
-
-  console.log("Jarvis is online!");
 });
 
 const commands = [
@@ -43,7 +35,14 @@ const commands = [
     .setDescription("Get current bot settings")
 ];
 
+client.once(Events.ClientReady, () => {
+  logContext("jarvis");
+  log("Jarvis is online!");
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
+  logContext("InteractionCreate");
+  log(`${interaction.user.tag} in ${interaction.guildId}`);
   if (!interaction.isChatInputCommand()) return;
   
   if (interaction.commandName === "chat") return handleChat(interaction);
@@ -54,25 +53,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // Listen for follow-up messages in threads and treat as conversation continuation
 client.on(Events.MessageCreate, async (msg) => {
   const isThread = msg.channel.isThread();
-  console.log(`Received message in ${msg.channelId}: ${msg.content}`);
-  if (msg.author.bot) return;
+  const botMentioned = msg.mentions.has(client.user!);
 
-  if (msg.mentions.has(client.user!)) {
-    const withoutMention = msg.content.replace(`<${client.user!.username}>`, "").trim();
-
-    if (isThread && !activeThreads.has(msg.channelId)) {
-      activeThreads = activeThreads.add(msg.channelId);
-    }
-
-    await handleMentionedChat(msg, withoutMention);
-    console.log(`listing Active Threads: ${Array.from(activeThreads.values()).join(", ")}`);
+  logContext("MessageCreate");
+  log(`[${msg.author.bot ? "bot" : "user"}:<${msg.author.username}>|[${isThread ? "thread" : ""}${botMentioned? "" : ""}]sent in ${msg.channelId}:\n${msg.content}\n`);
+  if (msg.author.bot) {
+    // lets not reply to bot messages, as they aren't to talk to themselves... yet.
     return;
   }
-  const isInActiveThreads = activeThreads.has(msg.channelId);
-  console.log(`Message in thread is ${isThread && isInActiveThreads ? "<active>" : Redact} - ${msg.channelId}: ${msg.content}`);
-  console.log(`listing Active Threads: ${Array.from(activeThreads.values()).join(", ")}`);
-  if (isThread && isInActiveThreads) {
-    await handleThreadMessage(msg);
+
+  if (msg.mentions.has(client.user!) || isThread) {
+    log(`mention found of client.user: ${client.user!.id} - ${client.user!.username}`);
+    await handleClientMessage(msg, client);
+    return;
   }
 });
 
@@ -81,12 +74,15 @@ async function registerCommands() {
     console.warn("Set DISCORD_BOT_TOKEN, CLIENT_ID, and GUILD_ID in .env to register commands.");
     return;
   }
-  const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+  const rest = new REST().setToken(process.env.DISCORD_BOT_TOKEN);
+
   await rest.put(
     Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
     { body: commands.map((c) => c.toJSON()) }
   );
-  console.log("Slash commands registered.");
+
+  log("Slash commands registered.");
 }
 
 if (process.env.REGISTER_COMMANDS === "true") {

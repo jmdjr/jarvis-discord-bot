@@ -35,7 +35,7 @@ A Discord bot for chatting with your personal AI (Ollama/HuggingFace) via `/chat
 4. To register slash commands for your guild (server):
 
    ```bash
-   REGISTER_COMMANDS=true npm run build && npm start
+   npm run build && REGISTER_COMMANDS=true npm start
    ```
 
 ## Extending

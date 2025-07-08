@@ -21,14 +21,14 @@ function isAIResponse(obj: any): obj is AIResponse {
 
 export async function* sendChat(
   messages: AIMessage[],
-  stream = false
+  model: {url: string, model: string} = {url: AI_URL, model: AI_MODEL},
 ): AsyncGenerator<string, void, unknown> {
   let response: Response;
   try {
-    response = await fetch(`${AI_URL}api/chat`, {
+    response = await fetch(`${model.url}api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, stream, model: AI_MODEL }),
+      body: JSON.stringify({ messages, stream: true, model: model.model }),
     });
   } catch (err) {
     yield `Error: Unable to reach AI backend (${err})`;
@@ -40,32 +40,17 @@ export async function* sendChat(
     return;
   }
 
-  if (!stream) {
-    let json: unknown;
-    try {
-      json = await response.json();
-    } catch (err) {
-      yield `Error: Failed to parse AI response as JSON (${err})`;
-      return;
-    }
-    if (isAIResponse(json)) {
-      yield json.message?.content ?? "";
-    } else {
-      yield "Error: AI response in unexpected format.";
-    }
-    return;
-  }
-
   // Streaming: yield as text comes in (chunked response)
   if (!response.body) {
     yield "Error: No stream returned by AI backend.";
     return;
   }
+  
   const decoder = new TextDecoder();
   for await (const chunk of response.body as AsyncIterable<Buffer>) {
-    // console.log("Received chunk:", chunk);
+    // log("Received chunk:", chunk);
     let chunkText = decoder.decode(chunk);
-    // console.log("Decoded chunk text:", chunkText);
+    // log("Decoded chunk text:", chunkText);
     // Check if chunkText contains a newline character, sign of a list of json objects
     if (chunkText.includes("\n")) {
       // Split by newlines and yield each JSON object
@@ -83,13 +68,12 @@ export async function* sendChat(
         }
       }
       yield streamedMessages.join("");
-      continue;
     }
-
-    // If no newline, treat as a single JSON object
-    const json = JSON.parse(chunkText);
-    if (isAIResponse(json)) {
-      yield json.message?.content ?? "";
+    else {
+      const json = JSON.parse(chunkText);
+      if (isAIResponse(json)) {
+        yield json.message?.content ?? "";
+      }
     }
   }
 }

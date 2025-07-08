@@ -1,98 +1,88 @@
-import { ChatInputCommandInteraction, Collection, Message } from "discord.js";
+import { Channel, ChatInputCommandInteraction, Client, Message, PublicThreadChannel } from "discord.js";
 import { sendChat } from "../ai/client";
-import { AI_URL, AI_NAME, MANAGERS } from "../config";
+import { AI_MODEL, AI_NAME } from "../config";
+import { log } from "../utils/log";
 
 type AIMessage = { role: "user" | "assistant"; content: string };
-const conversationMap = new Collection<string, AIMessage[]>();
 
 export async function handleChat(interaction: ChatInputCommandInteraction) {
   const message = interaction.options.getString("message", true);
-  const threadId = interaction.channelId;
-  const convo = conversationMap.get(threadId) || [];
+  const convo: AIMessage[] = [];
   convo.push({ role: "user", content: message });
 
   await interaction.reply(`${AI_NAME} is thinking...`);
-  await interaction.fetchReply(); // Ensure the reply is sent before streaming
   let fullResponse = "";
-  for await (const chunk of sendChat(convo, true)) {
+  for await (const chunk of sendChat(convo, { url: AI_MODEL, model: AI_NAME })) {
     fullResponse += chunk;
     await interaction.editReply(fullResponse);
   }
-
-  convo.push({ role: "assistant", content: fullResponse });
-  conversationMap.set(threadId, convo);
 }
 
-// Continuation for messages in thread (not just the command)
-export async function handleThreadMessage(msg: Message) {
-  const threadId = msg.channelId;
-  const isBot = msg.author.bot;
-
-  console.group(`Thread message in ${threadId}${isBot ? " (bot)" : ""}: ${msg.content}`);
-  if (isBot) return; // Ignore bot messages
-
-  const convo = conversationMap.get(threadId) || [];
-  convo.push({ role: "user", content: msg.content });
-
-  let fullResponse = "";
-  console.log(`Starting chat in thread ${threadId}`);
-  for await (const chunk of sendChat(convo, true)) {
-    fullResponse += chunk;
-    await msg.reply(fullResponse);
-  }
-
-  convo.push({ role: "assistant", content: fullResponse });
-  conversationMap.set(threadId, convo);
+function dropAIName(message: string, client: Client): string {
+  return message.replace(`<@${client.user!.id}>`, "").trim();
 }
 
-export async function handleMentionedChat(msg: Message, withoutMention: string) {
-  const convoKey = msg.channelId;
-  const convo = conversationMap.get(convoKey) || [];
-  convo.push({ role: "user", content: withoutMention });
-  let replyMsg;
-  console.group(`Bot Mentioned chat in ${msg.channelId}: ${conversationMap.size} conversations and ${convo.length} messages`);
+async function collectThreadMessages(msg: {channel: Channel, content: string}, client: Client): Promise<AIMessage[]> {
+  const channel = msg.channel;
+  const message = dropAIName(msg.content, client);
 
-  if(msg.channel.isThread()) {
-    replyMsg = await msg.reply(`${AI_NAME} is thinking...`);
+  if (!channel.isThread()) {
+    return [{ role: "user", content: message }];
   }
-  else {
-    const thread = await msg.startThread({
-      name: `${AI_NAME} Conversation`,
-      autoArchiveDuration: 60, // 1 hour
-      reason: "Started conversation thread",
+
+  const convo: AIMessage[] = [];
+  await channel.messages.fetch({ limit: 100 })
+  .then(messages => {
+    messages.forEach(msg => {
+      if (!msg.author.bot) {
+        convo.push({ role: "user", content: message });
+      } 
+      else if (msg.author.id === client.user!.id) {
+        convo.push({ role: "assistant", content: message });
+      }
     });
+  });
 
-    console.log(`Started thread ${thread.id} for conversation in channel ${msg.channelId}`);
-    replyMsg = await thread.send(`${AI_NAME} is thinking...`);
-  }
-
-  let fullResponse = "";
-  for await (const chunk of sendChat(convo, true)) {
-    fullResponse += chunk;
-    await replyMsg.edit(fullResponse);
-  }
-
-  convo.push({ role: "assistant", content: fullResponse });
-  conversationMap.set(convoKey, convo);
-  console.groupEnd();
-  console.log(`Conversation in ${msg.channelId} updated with ${convo.length} messages. Total Map: ${conversationMap.size} conversations.`);
-
-  if (!msg.channel.isThread()) {
-    await msg.react("🤖"); // React to indicate AI response
-  }
+  return convo.reverse();
 }
 
-export async function handleGetSettings(interaction: ChatInputCommandInteraction) {
-  if (!interaction.memberPermissions?.has("ManageChannels") && !interaction.memberPermissions?.has("Administrator")) {
-    await interaction.reply({ content: "You don't have permission to view settings.", ephemeral: true });
+export async function handleClientMessage(msg: Message, client: Client) {
+  const isThread = msg.channel.isThread();
+  const convo = await collectThreadMessages(msg, client);
+  const replyMsg = await threadReply(isThread, msg);
+  if(!replyMsg) {
     return;
   }
   
-  const settings = [
-    `AI_URL: ${AI_URL}`,
-    `AI_NAME: ${AI_NAME}`,
-    `MANAGERS: ${MANAGERS.length ? MANAGERS.join(", ") : "None"}`
-  ].join("\n");
+  log(`Reply message created in thread: ${replyMsg.id}`);
+  await sendChatReply(convo, replyMsg);
+}
 
-  await interaction.reply({ content: `Current Bot Settings:\n${settings}`, ephemeral: true });
+async function sendChatReply(convo: AIMessage[], replyMsg: Message<true>) {
+  let fullResponse = "";
+  for await (const chunk of sendChat(convo, { url: AI_MODEL, model: AI_NAME })) {
+    fullResponse += chunk;
+    await replyMsg.edit(fullResponse);
+  }
+}
+
+async function threadReply(isThread: boolean, msg: Message<boolean>) {
+  if (isThread) {
+    const thread = msg.channel as PublicThreadChannel<boolean>;
+    if(thread.ownerId !== msg.client.user!.id) {
+      return;
+    }
+    return await (msg.channel as PublicThreadChannel<boolean>).send(`${AI_NAME} is thinking...`);
+  }
+
+  const thread = await msg.startThread({
+    name: `${msg.content.slice(0, 10)}...`,
+    autoArchiveDuration: 60 * 5, // 5 hour
+    reason: "Started conversation thread"
+  });
+
+  await thread.setAppliedTags([AI_NAME, AI_MODEL]);
+
+  log(`Started thread ${thread.id} for conversation in channel ${msg.channelId}`);
+  return await thread.send(`${AI_NAME} is thinking...`);
 }
