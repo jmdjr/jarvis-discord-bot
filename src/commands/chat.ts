@@ -1,6 +1,6 @@
-import { Channel, ChatInputCommandInteraction, Client, Message, PublicThreadChannel } from "discord.js";
+import { Channel, ChatInputCommandInteraction, Client, Message, PublicThreadChannel, ThreadAutoArchiveDuration } from "discord.js";
 import { sendChat } from "../ai/client";
-import { AI_MODEL, AI_NAME } from "../config";
+import { AI_MODEL, AI_NAME, AI_URL } from "../config";
 import { log } from "../utils/log";
 
 type AIMessage = { role: "user" | "assistant"; content: string };
@@ -60,7 +60,7 @@ export async function handleClientMessage(msg: Message, client: Client) {
 
 async function sendChatReply(convo: AIMessage[], replyMsg: Message<true>) {
   let fullResponse = "";
-  for await (const chunk of sendChat(convo, { url: AI_MODEL, model: AI_NAME })) {
+  for await (const chunk of sendChat(convo, { url: AI_URL, model: AI_MODEL })) {
     fullResponse += chunk;
     await replyMsg.edit(fullResponse);
   }
@@ -76,12 +76,10 @@ async function threadReply(isThread: boolean, msg: Message<boolean>) {
   }
 
   const thread = await msg.startThread({
-    name: `${msg.content.slice(0, 10)}...`,
-    autoArchiveDuration: 60 * 5, // 5 hour
+    name: `${dropAIName(msg.content, msg.client).slice(0, 10)}...`,
+    autoArchiveDuration: ThreadAutoArchiveDuration.OneDay, // 1 day
     reason: "Started conversation thread"
   });
-
-  await thread.setAppliedTags([AI_NAME, AI_MODEL]);
 
   log(`Started thread ${thread.id} for conversation in channel ${msg.channelId}`);
   return await thread.send(`${AI_NAME} is thinking...`);
